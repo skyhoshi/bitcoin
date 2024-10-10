@@ -7,6 +7,7 @@
 #define BITCOIN_NET_PROCESSING_H
 
 #include <net.h>
+#include <txorphanage.h>
 #include <validationinterface.h>
 
 #include <chrono>
@@ -74,7 +75,8 @@ public:
         //! Whether or not the internal RNG behaves deterministically (this is
         //! a test-only option).
         bool deterministic_rng{false};
-        //! Number of headers sent in one getheaders message result.
+        //! Number of headers sent in one getheaders message result (this is
+        //! a test-only option).
         uint32_t max_headers_result{MAX_HEADERS_RESULTS};
     };
 
@@ -97,6 +99,8 @@ public:
 
     /** Get statistics from node state */
     virtual bool GetNodeStateStats(NodeId nodeid, CNodeStateStats& stats) const = 0;
+
+    virtual std::vector<TxOrphanage::OrphanTxBase> GetOrphanTransactions() = 0;
 
     /** Get peer manager info. */
     virtual PeerManagerInfo GetInfo() const = 0;
