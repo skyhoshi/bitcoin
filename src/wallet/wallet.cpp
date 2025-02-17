@@ -1990,6 +1990,14 @@ CWallet::ScanResult CWallet::ScanForWalletTransactions(const uint256& start_bloc
         if (max_height && block_height >= *max_height) {
             break;
         }
+        // If rescanning was triggered with cs_wallet permanently locked (AttachChain), additional blocks that were connected during the rescan
+        // aren't processed here but will be processed with the pending blockConnected notifications after the lock is released.
+        // If rescanning without a permanent cs_wallet lock, additional blocks that were added during the rescan will be re-processed if
+        // the notification was processed and the last block height was updated.
+        if (block_height >= WITH_LOCK(cs_wallet, return GetLastBlockHeight())) {
+            break;
+        }
+
         {
             if (!next_block) {
                 // break successfully when rescan has reached the tip, or
@@ -3272,12 +3280,12 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
     }
 
     // Register wallet with validationinterface. It's done before rescan to avoid
-    // missing block connections between end of rescan and validation subscribing.
-    // Because of wallet lock being hold, block connection notifications are going to
-    // be pending on the validation-side until lock release. It's likely to have
-    // block processing duplicata (if rescan block range overlaps with notification one)
-    // but we guarantee at least than wallet state is correct after notifications delivery.
-    // However, chainStateFlushed notifications are ignored until the rescan is finished
+    // missing block connections during the rescan.
+    // Because of the wallet lock being held, block connection notifications are going to
+    // be pending on the validation-side until lock release. Blocks that are connected while the
+    // rescan is ongoing will not be processed in the rescan but with the block connected notifications,
+    // so the wallet will only be completeley synced after the notifications delivery.
+    // chainStateFlushed notifications are ignored until the rescan is finished
     // so that in case of a shutdown event, the rescan will be repeated at the next start.
     // This is temporary until rescan and notifications delivery are unified under same
     // interface.
@@ -4398,9 +4406,8 @@ bool DoMigration(CWallet& wallet, WalletContext& context, bilingual_str& error, 
 
 util::Result<MigrationResult> MigrateLegacyToDescriptor(const std::string& wallet_name, const SecureString& passphrase, WalletContext& context)
 {
-    MigrationResult res;
-    bilingual_str error;
     std::vector<bilingual_str> warnings;
+    bilingual_str error;
 
     // If the wallet is still loaded, unload it so that nothing else tries to use it while we're changing it
     bool was_loaded = false;
@@ -4452,10 +4459,23 @@ util::Result<MigrationResult> MigrateLegacyToDescriptor(const std::string& walle
         return util::Error{Untranslated("Wallet loading failed.") + Untranslated(" ") + error};
     }
 
+    return MigrateLegacyToDescriptor(std::move(local_wallet), passphrase, context, was_loaded);
+}
+
+util::Result<MigrationResult> MigrateLegacyToDescriptor(std::shared_ptr<CWallet> local_wallet, const SecureString& passphrase, WalletContext& context, bool was_loaded)
+{
+    MigrationResult res;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+
+    DatabaseOptions options;
+    options.require_existing = true;
+    DatabaseStatus status;
+
+    const std::string wallet_name = local_wallet->GetName();
+
     // Helper to reload as normal for some of our exit scenarios
     const auto& reload_wallet = [&](std::shared_ptr<CWallet>& to_reload) {
-        // Reset options.require_format as wallets of any format may be reloaded.
-        options.require_format = std::nullopt;
         assert(to_reload.use_count() == 1);
         std::string name = to_reload->GetName();
         to_reload.reset();

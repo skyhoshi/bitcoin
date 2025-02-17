@@ -44,7 +44,7 @@ add_executable(bench_bitcoin
   pool.cpp
   prevector.cpp
   random.cpp
-  readblock.cpp
+  readwriteblock.cpp
   rollingbloom.cpp
   rpc_blockchain.cpp
   rpc_mempool.cpp
@@ -81,6 +81,4 @@ add_test(NAME bench_sanity_check_high_priority
   COMMAND bench_bitcoin -sanity-check -priority-level=high
 )
 
-install(TARGETS bench_bitcoin
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+install_binary_component(bench_bitcoin)
